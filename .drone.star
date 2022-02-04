@@ -1,8 +1,8 @@
 def main(ctx):
     return [
         pipeline_lint(),
-        pipeline_linux_desktop('x86_64-linux-clang', image_linux_x86_64(), 'amd64', 'clang'),
-        pipeline_linux_desktop('x86_64-linux-gcc', image_linux_x86_64(), 'amd64', 'gcc'),
+        pipeline_linux_desktop('x86_64-linux-clang', image_linux_x86_64(), 'amd64', 'clang', True),
+        pipeline_linux_desktop('x86_64-linux-gcc', image_linux_x86_64(), 'amd64', 'gcc', False), # GCC release linking is really slow
         pipeline_android('x86_64-android', image_linux_x86_64(), 'amd64', 'Android-x86_64'),
         pipeline_android('aarch64-android', image_linux_x86_64(), 'amd64', 'Android-ARM64'),
     ]
@@ -104,7 +104,7 @@ def pipeline_lint():
         ],
     }
 
-def pipeline_linux_desktop(name, image, arch, cc):
+def pipeline_linux_desktop(name, image, arch, cc, build_release_all):
     return {
         'kind': 'pipeline',
         'type': 'docker',
@@ -185,6 +185,17 @@ def pipeline_linux_desktop(name, image, arch, cc):
             #
             # Building
             #
+
+            {
+                'name': 'build-premake-debug-tests',
+                'image': image,
+                'volumes': [volume_build('premake')],
+                'commands': [
+                    command_cc(cc),
+                    './xenia-build build --no_premake -j$(nproc) --config=Debug --target=xenia-base-tests',
+                ],
+                'depends_on': ['toolchain-premake'],
+            },
             {
                 'name': 'build-premake-debug-all',
                 'image': image,
@@ -193,7 +204,7 @@ def pipeline_linux_desktop(name, image, arch, cc):
                     command_cc(cc),
                     './xenia-build build --no_premake -j$(nproc) --config=Debug',
                 ],
-                'depends_on': ['toolchain-premake'],
+                'depends_on': ['build-premake-debug-tests'],
             },
 
             {
@@ -206,7 +217,7 @@ def pipeline_linux_desktop(name, image, arch, cc):
                 ],
                 'depends_on': ['toolchain-premake'],
             },
-
+        ] + ([
             {
                 'name': 'build-premake-release-all',
                 'image': image,
@@ -217,6 +228,7 @@ def pipeline_linux_desktop(name, image, arch, cc):
                 ],
                 'depends_on': ['build-premake-release-tests'],
             },
+        ] if build_release_all else []) + [
 
             {
                 'name': 'build-cmake-debug-all',
@@ -241,7 +253,7 @@ def pipeline_linux_desktop(name, image, arch, cc):
                 ],
                 'depends_on': ['toolchain-cmake'],
             },
-
+        ] + ([
             {
                 'name': 'build-cmake-release-all',
                 'image': image,
@@ -253,13 +265,25 @@ def pipeline_linux_desktop(name, image, arch, cc):
                 ],
                 'depends_on': ['build-cmake-release-tests'],
             },
+        ] if build_release_all else []) + [
 
 
             #
             # Tests
             #
+
             {
-                'name': 'test-premake',
+                'name': 'test-premake-debug-valgrind',
+                'image': image,
+                'volumes': [volume_build('premake')],
+                'commands': [
+                    'valgrind --error-exitcode=99 ./build/bin/Linux/Debug/xenia-base-tests',
+                ],
+                'depends_on': ['build-premake-debug-tests'],
+            },
+
+            {
+                'name': 'test-premake-release',
                 'image': image,
                 'volumes': [volume_build('premake')],
                 'commands': [
@@ -269,7 +293,7 @@ def pipeline_linux_desktop(name, image, arch, cc):
             },
 
             {
-                'name': 'test-cmake',
+                'name': 'test-cmake-release',
                 'image': image,
                 'volumes': [volume_build('cmake')],
                 'commands': [
@@ -282,6 +306,7 @@ def pipeline_linux_desktop(name, image, arch, cc):
             #
             # Stat
             #
+
             {
                 'name': 'stat',
                 'image': image,
@@ -312,11 +337,15 @@ def pipeline_linux_desktop(name, image, arch, cc):
                     '''
                 ],
                 'depends_on': [
-                  'build-premake-debug-all',
-                  'build-premake-release-all',
-                  'build-cmake-debug-all',
-                  'build-cmake-release-all',
-                ],
+                    'build-premake-debug-all',
+                    'build-cmake-debug-all',
+                ] + ([
+                    'build-premake-release-all',
+                    'build-cmake-release-all',
+                ] if build_release_all else [
+                    'build-premake-release-tests',
+                    'build-cmake-release-tests',
+                ]),
             },
         ],
     }

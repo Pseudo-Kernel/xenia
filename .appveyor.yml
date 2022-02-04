@@ -10,11 +10,15 @@ skip_commits:
   files:
     - .drone.star
     - .github/**
+    - android/**
     - docs/**
     - src/**/*_posix.*
     - src/**/*_linux.*
+    - src/**/*_gnulinux.*
     - src/**/*_x11.*
     - src/**/*_gtk.*
+    - src/**/*_android.*
+    - src/**/*_mac.*
     - LICENSE
     - README.md
 
@@ -24,6 +28,15 @@ pull_requests:
   do_not_increment_build_number: true
 
 os: Visual Studio 2019
+
+init:
+  - ps: |
+      If (-Not $env:APPVEYOR_PULL_REQUEST_NUMBER) {
+        $env:is_not_pr = "true"
+      }
+      If (-Not $env:APPVEYOR_REPO_COMMIT_MESSAGE_EXTENDED) {
+        $env:APPVEYOR_REPO_COMMIT_MESSAGE_EXTENDED = " "
+      }
 
 install:
   - |
@@ -67,4 +80,23 @@ deploy:
       branch: master
       configuration: release
       appveyor_repo_tag: true
+      is_not_pr: true
+  - provider: GitHub
+    name: xenia-master
+    repository: xenia-project/release-builds-windows
+    auth_token:
+      secure: /8he47z1WnPN7LcCTe5T5KMxxX0SmqFj9QMpeWEa3aZ64kMsfupOT/jKakqTM8af
+    tag: v$(appveyor_build_version)
+    release: v$(appveyor_build_version)
+    description: |
+      Windows release build for https://github.com/xenia-project/xenia/commit/$(APPVEYOR_REPO_COMMIT).
+      
+      $(APPVEYOR_REPO_COMMIT_MESSAGE)
+      
+      $(APPVEYOR_REPO_COMMIT_MESSAGE_EXTENDED)
+    draft: false
+    prerelease: false
+    on:
+      branch: master
+      configuration: release
       is_not_pr: true
